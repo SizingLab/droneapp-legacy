@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<title>OpenJSCAD</title>
+<script src="index.js"></script>
+<link href="style.css" rel="stylesheet" type="text/css"/>
+<link href="openjscad.css" rel="stylesheet" type="text/css"/>
+</head>
+<body>
+<!-- editor -->
+<div id="editFrame" style="display:none">
+<div id="editor">
+        function getParameterDefinitions() {
+
+            return [
+                    { name: 'batpars', type: 'group', caption: 'Battery params.' },
+                    { name: 'Vol_bat', type: 'number', step:1, initial:1279.725122568406, caption: 'Volume battery[cm^3]' },
+                    { name: 'proppars', type: 'group', caption: 'Propeller params.' },
+                    { name: 'Dpro',  type: 'number', step:1, initial:40.957711621082474, caption: 'Propeller diameter [cm]' },
+                    { name: 'pitch', type: 'number', step:1, initial:15.95055100215282, caption: 'Pitch [cm]' },
+                    { name: 'motpars', type: 'group', caption: 'Motor params.' },
+                    { name: 'Lmot', type: 'number', step:1, initial:6.4055417462623305, caption: 'Motor length [cm]' },
+                    { name: 'config', type: 'group', caption: 'Configuration' },
+                    { name: 'Npro',  type: 'number', step:1, initial:8.0, caption: 'Number of propeller [-]' },
+                    { name: 'Nproarm',  type: 'number', step:1, initial:1, caption: 'Number of propeller per arm [-]' },
+                    { name: 'Lbra',  type: 'number', step:1, initial:53.51382913019314, caption: 'Arm length [cm]' },
+                    { name: 'Dout',  type: 'number', step:1, initial:3.9240879597154414, caption: 'Side arm [cm]' },
+                    { name: 'position', type: 'group', caption: 'Positioning' },
+                    { name: 'x',    type: 'number', step:1, initial: 0, caption: 'X pos' },
+                    { name: 'y',    type: 'number', step:1, initial: 0, caption: 'Y pos' },
+                    { name: 'z',    type: 'number', step:1, initial: 0, caption: 'Z pos' },
+                    { name: 'a',    type: 'number', step:1, initial: 0, caption: 'X rot' },
+                    { name: 'b',    type: 'number', step:1, initial: 0, caption: 'Y rot' },
+                    { name: 'c',    type: 'number', step:1, initial: 0, caption: 'Z rot' }
+                   ];
+        }
+
+        function main(p) {
+
+            let Vol_bat=p.Vol_bat,
+                Lbat = 3*(Vol_bat/6)**(1/3),
+                Hbat = 2*(Vol_bat/6)**(1/3),  
+                Wbat = (Vol_bat/6)**(1/3),
+                Lmoteur = p.Lmot,
+                Lhd=0.25*Lmoteur,
+                Dhd=0.25*2.54, // this shaft diameter is commonly used along the series of APC MR propellers
+                Dmot=0.7*Lmoteur; // geometric ratio used for AXI 2208,2212,2217
+
+
+            let N = p.N;
+                Dpro = p.Dpro,
+                pitch=p.pitch,
+                pitch_angle= Math.atan(pitch/(Math.PI*Dpro))*180/Math.PI,
+                Dsha=0.05*Dpro,
+                L1= Math.sin(pitch_angle),
+                L2= Dsha/2*L1,
+                L3= Math.cos(pitch_angle),
+                L4= Dsha/2*L3,
+                Hsha=(Dsha/4*Math.sin(Math.atan(pitch/(Math.PI*Dpro)))+0.125*Math.cos(Math.atan(pitch/(Math.PI*Dpro))))*2,
+                Lbra=p.Lbra,
+                Dout=p.Dout,
+                Npro=p.Npro,
+                Nproarm=p.Nproarm,
+                Narm=Npro/Nproarm;
+
+
+            let x = p.x,
+                a = p.a,
+                y = p.y,
+                b = p.b,
+                z = p.z,
+                c = p.c;
+
+             //Battery geometry:
+
+            let battery = union(
+
+              cylinder({h: Hbat, r: Wbat/2}).translate([0,Wbat/2,0]) ,
+              cube(size=[Lbat, Wbat, Hbat]).translate([0,0,0]),
+              cylinder({h: Hbat, r: Wbat/2}).translate([Lbat,Wbat/2,0])  
+            );
+
+            //Motor geometry:
+
+            let moteur = union(
+
+                cylinder({h : Lhd, r : Dhd}).translate([0,0,0.75*Lmoteur]),
+                cylinder({h : Lmoteur-Lhd, r : Dmot})
+
+                );        
+
+
+            function clock(second) {
+                var t = 400*(second); 
+                var s = cylinder({r:0.1,h:6}).setColor(0,0,1).rotateX(-t/60*360);
+                return union(s).rotateY(-90).translate([0,0,5]);
+            }
+
+
+            function loop() {
+                var d = new Date();
+
+                self.postMessage({cmd:'rendered',
+                    objects: [
+                        clock(d.getSeconds()).toCompactBinary()
+                        ]});
+            }
+
+
+
+            //Propeller geometry:
+
+            let propeller = union(
+
+              cube(size=[Dpro/2, Dsha/2, 0.001*Dpro]).translate([0,-Dsha/4,0]).rotateX(pitch_angle),
+              cylinder({h: Hsha, r: Dsha/2}).translate([0,0,-Hsha/2])  ,
+              cube(size=[Dpro/2, Dsha/2, 0.001*Dpro]).translate([-Dpro/2,-Dsha/4,0]).rotateX(pitch_angle)
+
+            );
+
+            //Motor and propeller iteration:
+           var cubes = new Array();
+           for(i=0; i&lt;Npro; i++) {
+              cubes[i] = rotate([0,0,i/Narm*360], 
+                 translate([Lbra,0,0], 
+                 moteur.setColor(0,1,0),propeller.setColor(0,0,1).translate([0, 0, Lmoteur+Hsha/2])         
+                 ));
+           }
+
+           //Coaxial configuration:
+            var coaxial = new Array();
+           for(i=0; i&lt;Npro; i++) {
+              coaxial[i] = cubes[i].mirroredZ();
+           }
+
+
+            //Arm connection to battery:
+
+           var arm = new Array();
+           for(i=0; i&lt;Npro; i++) {
+              arm[i] = rotate([0,0,i/Narm*360], 
+              cube(size=[Lbra, Dout/2, Dout/2]).rotateX(90));
+           }   
+
+           if (Nproarm == 2) {
+               return union(battery.setColor(1,0,0).translate([-Lbat/2, 0, -Hbat/2]).rotateX(90),cubes,arm,coaxial).translate([x, y, z]).rotateX(a).rotateY(b).rotateZ(c);
+            }
+            else{
+               return union(battery.setColor(0,0,1).translate([-Lbat/2, 0, -Hbat/2]).rotateX(90),cubes,arm).translate([x, y, z]).rotateX(a).rotateY(b).rotateZ(c);    
+            }
+
+
+        }
+                    </div>
+</div>
+<!-- editor -->
+<div id="viewerContext" oncontextmenu="return false;"></div><!-- avoiding popup when right mouse is clicked -->
+<!-- design information (status message, download buttons, drag and drop area, etc) -->
+<div id="tail">
+<div id="statusdiv"></div>
+</div>
+</body>
+</html>
